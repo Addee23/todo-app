@@ -1,94 +1,131 @@
-import { db } from "@/lib/db";
-import type { ResultSetHeader, RowDataPacket } from "mysql2";
+import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/session";
 
-type TodoRow = RowDataPacket & {
-  id: number;
-  text: string;
-  completed: 0 | 1;
-  created_at: Date;
-};
 
 export async function GET() {
-  const [rows] = await db.query<TodoRow[]>(
-    "SELECT id, text, completed, created_at FROM todos ORDER BY id DESC"
-  );
+  try {
+    const todos = await prisma.todos.findMany({
+      orderBy: {
+        id: "desc",
+      },
+    });
 
-  const todos = rows.map((todo) => ({
-    id: todo.id,
-    text: todo.text,
-    completed: Boolean(todo.completed),
-    created_at: todo.created_at,
-  }));
-
-  return Response.json(todos);
+    return Response.json(todos);
+  } catch (error) {
+    console.error("Could not fetch todos:", error);
+    return Response.json({ error: "Could not fetch todos" }, { status: 500 });
+  }
 }
 
 export async function POST(request: Request) {
-  const body = await request.json();
+  try {
+    const body = await request.json();
 
-  const text = body.text;
+    const text = body.text;
 
-  if (!text || text.trim() === "") {
-    return Response.json(
-      { error: "Text is required" },
-      { status: 400 }
-    );
+    if (!text || text.trim() === "") {
+      return Response.json(
+        { error: "Text is required" },
+        { status: 400 }
+      );
+    }
+
+    const newTodo = await prisma.todos.create({
+      data: {
+        text: text.trim(),
+        completed: false,
+      },
+    });
+
+    return Response.json({
+      id: newTodo.id,
+      text: newTodo.text,
+      completed: newTodo.completed,
+      created_at: newTodo.created_at.toISOString(),
+    }, { status: 201 });
+  } catch (error) {
+    console.error("Could not create todo:", error);
+    return Response.json({ error: "Could not create todo" }, { status: 500 });
   }
-
-  const [result] = await db.query<ResultSetHeader>(
-    "INSERT INTO todos (text, completed) VALUES (?, false)",
-    [text.trim()]
-  );
-
-  const newTodo = {
-    id: result.insertId,
-    text: text.trim(),
-    completed: false,
-  };
-
-  return Response.json(newTodo, { status: 201 });
 }
 
 
 export async function DELETE(request: Request) {
-  const body = await request.json();
+  try {
+    const session = await getSession();
 
-  const id = body.id;
+    if (!session) {
+      return Response.json(
+        { error: "Unauthorized" },
+        { status: 401 }
+      );
+    }
 
-  if (!id) {
-    return Response.json(
-      { error: "Id is required" },
-      { status: 400 }
-    );
+    if (session.role !== "admin") {
+      return Response.json(
+        { error: "Forbidden" },
+        { status: 403 }
+      );
+    }
+
+    const body = await request.json();
+
+    const id = body.id;
+
+    if (typeof id !== "number") {
+      return Response.json(
+        { error: "Valid id is required" },
+        { status: 400 }
+      );
+    }
+
+    await prisma.todos.delete({
+      where: {
+        id,
+      },
+    });
+
+    return Response.json({ success: true });
+  } catch (error) {
+    console.error("Could not delete todo:", error);
+    return Response.json({ error: "Could not delete todo" }, { status: 500 });
   }
-
-  await db.query("DELETE FROM todos WHERE id = ?", [id]);
-
-  return Response.json({ success: true });
 }
 
+
 export async function PATCH(request: Request) {
-  const body = await request.json();
+  try {
+    const body = await request.json();
 
-  const id = body.id;
-  const completed = body.completed;
+    const id = body.id;
+    const completed = body.completed;
 
-  if (!id || typeof completed !== "boolean") {
-    return Response.json(
-      { error: "Id and completed are required" },
-      { status: 400 }
-    );
+    if (!id || typeof completed !== "boolean") {
+      return Response.json(
+        { error: "Id and completed are required" },
+        { status: 400 }
+      );
+    }
+
+    const updatedTodo = await prisma.todos.update({
+      where: {
+        id,
+      },
+      data: {
+        completed,
+      },
+    });
+
+    return Response.json({
+      id: updatedTodo.id,
+      text: updatedTodo.text,
+      completed: updatedTodo.completed,
+      created_at: updatedTodo.created_at.toISOString(),
+    });
+  } catch (error) {
+    console.error("Could not update todo:", error);
+    return Response.json({ error: "Could not update todo" }, { status: 500 });
   }
-
-  await db.query(
-    "UPDATE todos SET completed = ? WHERE id = ?",
-    [completed, id]
-  );
-
-  return Response.json({
-    id,
-    completed,
-  });
 }
 
 

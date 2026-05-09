@@ -2,94 +2,150 @@
 
 import { type FormEvent, useEffect, useState } from "react";
 
-
 type Todo = {
   id: number;
   text: string;
   completed: boolean;
 };
 
+type User = {
+  id: number;
+  username: string;
+  role: "admin" | "staff";
+};
+
 export default function TodoApp() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [text, setText] = useState("");
+  const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
-  async function fetchTodos() {
-    const response = await fetch("/api/todos");
-    const data: Todo[] = await response.json();
+    async function fetchTodos() {
+      try {
+        const response = await fetch("/api/todos");
 
-    setTodos(data);
-  }
+        if (!response.ok) return;
 
-  fetchTodos();
-}, []);
+        const data: Todo[] = await response.json();
 
+        setTodos(data);
+      } catch (error) {
+        console.error("Could not fetch todos:", error);
+      }
+    }
+
+    async function fetchUser() {
+      try {
+        const response = await fetch("/api/auth/me");
+
+        if (!response.ok) return;
+
+        const data: { user: User } = await response.json();
+
+        setUser(data.user);
+      } catch (error) {
+        console.error("Could not fetch user:", error);
+      }
+    }
+
+    fetchTodos();
+    fetchUser();
+  }, []);
 
   const completedTodos = todos.filter((todo) => todo.completed).length;
   const activeTodos = todos.length - completedTodos;
 
-async function addTodo(event: FormEvent<HTMLFormElement>) {
-  event.preventDefault();
+  async function addTodo(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
 
-  if (text.trim() === "") return;
+    if (text.trim() === "") return;
 
-  const response = await fetch("/api/todos", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      text: text.trim(),
-    }),
-  });
+    try {
+      const response = await fetch("/api/todos", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          text: text.trim(),
+        }),
+      });
 
-  const newTodo: Todo = await response.json();
+      if (!response.ok) return;
 
-  setTodos([newTodo, ...todos]);
-  setText("");
-}
+      const newTodo: Todo = await response.json();
 
+      setTodos([newTodo, ...todos]);
+      setText("");
+    } catch (error) {
+      console.error("Could not add todo:", error);
+    }
+  }
 
   async function toggleTodo(id: number) {
-  const todo = todos.find((todo) => todo.id === id);
+    const todo = todos.find((todo) => todo.id === id);
 
-  if (!todo) return;
+    if (!todo) return;
 
-  const updatedCompleted = !todo.completed;
+    const updatedCompleted = !todo.completed;
 
-  await fetch("/api/todos", {
-    method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      id,
-      completed: updatedCompleted,
-    }),
-  });
+    try {
+      const response = await fetch("/api/todos", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id,
+          completed: updatedCompleted,
+        }),
+      });
 
-  setTodos(
-    todos.map((todo) =>
-      todo.id === id
-        ? { ...todo, completed: updatedCompleted }
-        : todo
-    )
-  );
-}
+      if (!response.ok) return;
 
+      setTodos(
+        todos.map((todo) =>
+          todo.id === id
+            ? { ...todo, completed: updatedCompleted }
+            : todo
+        )
+      );
+    } catch (error) {
+      console.error("Could not update todo:", error);
+    }
+  }
 
- async function deleteTodo(id: number) {
-  await fetch("/api/todos", {
-    method: "DELETE",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ id }),
-  });
+  async function deleteTodo(id: number) {
+    try {
+      const response = await fetch("/api/todos", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id }),
+      });
 
-  setTodos(todos.filter((todo) => todo.id !== id));
-}
+      if (!response.ok) return;
 
+      setTodos(todos.filter((todo) => todo.id !== id));
+    } catch (error) {
+      console.error("Could not delete todo:", error);
+    }
+  }
+
+  async function logout() {
+    try {
+      const response = await fetch("/api/auth/logout", {
+        method: "POST",
+      });
+
+      if (!response.ok) return;
+
+      window.location.href = "/login";
+    } catch (error) {
+      console.error("Could not logout:", error);
+    }
+  }
 
   return (
     <section className="w-full max-w-2xl rounded-3xl border border-white/15 bg-white/95 p-6 text-slate-950 shadow-2xl shadow-black/30 sm:p-8">
@@ -100,10 +156,27 @@ async function addTodo(event: FormEvent<HTMLFormElement>) {
         <h1 className="text-4xl font-black tracking-tight text-slate-950 sm:text-5xl">
           Min Todo App
         </h1>
+
         <p className="mt-3 max-w-xl text-slate-600">
           Skriv en uppgift, markera den som klar och ta bort den n&auml;r du
           &auml;r f&auml;rdig.
         </p>
+
+        {user && (
+          <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl bg-slate-100 p-3">
+            <p className="text-sm font-medium text-slate-600">
+              Inloggad som {user.username} ({user.role})
+            </p>
+
+            <button
+              onClick={logout}
+              className="cursor-pointer rounded-xl bg-slate-900 px-3 py-2 text-sm font-bold text-white transition hover:bg-slate-700"
+            >
+              Logga ut
+            </button>
+          </div>
+        )}
+
       </div>
 
       <div className="mb-6 grid grid-cols-3 gap-3">
@@ -131,7 +204,7 @@ async function addTodo(event: FormEvent<HTMLFormElement>) {
 
         <button
           type="submit"
-          className="min-h-12 rounded-2xl bg-teal-600 px-6 font-bold text-white shadow-lg shadow-teal-900/20 transition hover:-translate-y-0.5 hover:bg-teal-700"
+          className="min-h-12 cursor-pointer rounded-2xl bg-teal-600 px-6 font-bold text-white shadow-lg shadow-teal-900/20 transition hover:-translate-y-0.5 hover:bg-teal-700"
         >
           L&auml;gg till
         </button>
@@ -145,7 +218,7 @@ async function addTodo(event: FormEvent<HTMLFormElement>) {
           >
             <button
               onClick={() => toggleTodo(todo.id)}
-              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border font-black transition ${
+              className={`flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full border font-black transition ${
                 todo.completed
                   ? "border-teal-600 bg-teal-600 text-white"
                   : "border-slate-300 bg-white text-transparent hover:border-teal-500"
@@ -157,7 +230,7 @@ async function addTodo(event: FormEvent<HTMLFormElement>) {
 
             <button
               onClick={() => toggleTodo(todo.id)}
-              className={`min-w-0 flex-1 text-left text-base font-medium ${
+              className={`min-w-0 flex-1 cursor-pointer text-left text-base font-medium ${
                 todo.completed
                   ? "text-slate-400 line-through"
                   : "text-slate-800"
@@ -166,12 +239,15 @@ async function addTodo(event: FormEvent<HTMLFormElement>) {
               {todo.text}
             </button>
 
-            <button
-              onClick={() => deleteTodo(todo.id)}
-              className="rounded-xl bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700 transition hover:bg-rose-100"
-            >
-              Ta bort
-            </button>
+            {user?.role === "admin" && (
+              <button
+                onClick={() => deleteTodo(todo.id)}
+                className="cursor-pointer rounded-xl bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700 transition hover:bg-rose-100"
+              >
+                Ta bort
+              </button>
+            )}
+
           </li>
         ))}
       </ul>
